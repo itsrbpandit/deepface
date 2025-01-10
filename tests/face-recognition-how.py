@@ -1,89 +1,107 @@
-#!pip install deepface
-from deepface.basemodels import VGGFace, OpenFace, Facenet, FbDeepFace
-from deepface.commons import functions
-
+# 3rd party dependencies
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
 
-#----------------------------------------------
-#build face recognition model
+# project dependencies
+from deepface import DeepFace
+from deepface.modules import verification
+from deepface.models.FacialRecognition import FacialRecognition
+from deepface.commons.logger import Logger
 
-model = VGGFace.loadModel()
-#model = Facenet.loadModel()
-#model = OpenFace.loadModel()
-#model = FbDeepFace.loadModel()
+logger = Logger()
 
-try:
-	input_shape = model.layers[0].input_shape[1:3]
-except: #issue 470
-	input_shape = model.layers[0].input_shape[0][1:3]
+# ----------------------------------------------
+# build face recognition model
 
-print("model input shape: ", model.layers[0].input_shape[1:])
-print("model output shape: ", model.layers[-1].input_shape[-1])
+model_name = "VGG-Face"
 
-#----------------------------------------------
-#load images and find embeddings
+model: FacialRecognition = DeepFace.build_model(task="facial_recognition", model_name=model_name)
 
-#img1 = functions.detectFace("dataset/img1.jpg", input_shape)
-img1 = functions.preprocess_face("dataset/img1.jpg", input_shape)
-img1_representation = model.predict(img1)[0,:]
+target_size = model.input_shape
 
-#img2 = functions.detectFace("dataset/img3.jpg", input_shape)
-img2 = functions.preprocess_face("dataset/img3.jpg", input_shape)
-img2_representation = model.predict(img2)[0,:]
+logger.info(f"target_size: {target_size}")
 
-#----------------------------------------------
-#distance between two images
+# ----------------------------------------------
+# load images and find embeddings
 
+img1 = DeepFace.extract_faces(img_path="dataset/img1.jpg")[0]["face"]
+img1 = cv2.resize(img1, target_size)
+img1 = np.expand_dims(img1, axis=0)  # to (1, 224, 224, 3)
+img1_representation = model.forward(img1)
+
+img2 = DeepFace.extract_faces(img_path="dataset/img3.jpg")[0]["face"]
+img2 = cv2.resize(img2, target_size)
+img2 = np.expand_dims(img2, axis=0)
+img2_representation = model.forward(img2)
+
+img1_representation = np.array(img1_representation)
+img2_representation = np.array(img2_representation)
+
+# ----------------------------------------------
+# distance between two images - euclidean distance formula
 distance_vector = np.square(img1_representation - img2_representation)
-#print(distance_vector)
+current_distance = np.sqrt(distance_vector.sum())
+logger.info(f"Euclidean distance: {current_distance}")
 
-distance = np.sqrt(distance_vector.sum())
-print("Euclidean distance: ",distance)
+threshold = verification.find_threshold(model_name=model_name, distance_metric="euclidean")
+logger.info(f"Threshold for {model_name}-euclidean pair is {threshold}")
 
-#----------------------------------------------
-#expand vectors to be shown better in graph
+if current_distance < threshold:
+    logger.info(
+        f"This pair is same person because its distance {current_distance}"
+        f" is less than threshold {threshold}"
+    )
+else:
+    logger.info(
+        f"This pair is different persons because its distance {current_distance}"
+        f" is greater than threshold {threshold}"
+    )
+# ----------------------------------------------
+# expand vectors to be shown better in graph
 
-img1_graph = []; img2_graph = []; distance_graph = []
+img1_graph = []
+img2_graph = []
+distance_graph = []
 
 for i in range(0, 200):
-	img1_graph.append(img1_representation)
-	img2_graph.append(img2_representation)
-	distance_graph.append(distance_vector)
+    img1_graph.append(img1_representation)
+    img2_graph.append(img2_representation)
+    distance_graph.append(distance_vector)
 
 img1_graph = np.array(img1_graph)
 img2_graph = np.array(img2_graph)
 distance_graph = np.array(distance_graph)
 
-#----------------------------------------------
-#plotting
+# ----------------------------------------------
+# plotting
 
 fig = plt.figure()
 
-ax1 = fig.add_subplot(3,2,1)
-plt.imshow(img1[0][:,:,::-1])
-plt.axis('off')
+ax1 = fig.add_subplot(3, 2, 1)
+plt.imshow(img1[0])
+plt.axis("off")
 
-ax2 = fig.add_subplot(3,2,2)
-im = plt.imshow(img1_graph, interpolation='nearest', cmap=plt.cm.ocean)
+ax2 = fig.add_subplot(3, 2, 2)
+im = plt.imshow(img1_graph, interpolation="nearest", cmap=plt.cm.ocean)
 plt.colorbar()
 
-ax3 = fig.add_subplot(3,2,3)
-plt.imshow(img2[0][:,:,::-1])
-plt.axis('off')
+ax3 = fig.add_subplot(3, 2, 3)
+plt.imshow(img2[0])
+plt.axis("off")
 
-ax4 = fig.add_subplot(3,2,4)
-im = plt.imshow(img2_graph, interpolation='nearest', cmap=plt.cm.ocean)
+ax4 = fig.add_subplot(3, 2, 4)
+im = plt.imshow(img2_graph, interpolation="nearest", cmap=plt.cm.ocean)
 plt.colorbar()
 
-ax5 = fig.add_subplot(3,2,5)
-plt.text(0.35, 0, "Distance: %s" % (distance))
-plt.axis('off')
+ax5 = fig.add_subplot(3, 2, 5)
+plt.text(0.35, 0, f"Distance: {current_distance}")
+plt.axis("off")
 
-ax6 = fig.add_subplot(3,2,6)
-im = plt.imshow(distance_graph, interpolation='nearest', cmap=plt.cm.ocean)
+ax6 = fig.add_subplot(3, 2, 6)
+im = plt.imshow(distance_graph, interpolation="nearest", cmap=plt.cm.ocean)
 plt.colorbar()
 
 plt.show()
 
-#----------------------------------------------
+# ----------------------------------------------
